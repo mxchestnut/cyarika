@@ -9,7 +9,7 @@ export async function handleProfile(message: Message): Promise<boolean> {
   if (!match) return false;
 
   const name = match[1].trim();
-  const character = await fetchCharacter(name);
+  const character = await fetchCharacter(name, message.author.id);
 
   if (!character) {
     await message.reply({

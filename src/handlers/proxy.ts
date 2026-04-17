@@ -43,7 +43,7 @@ export async function handleProxy(message: Message): Promise<boolean> {
   const text = match[2];
   console.log(`[proxy] matched name="${name}" text="${text.slice(0, 40)}"`);
 
-  const character = await fetchCharacter(name);
+  const character = await fetchCharacter(name, message.author.id);
   if (!character) {
     console.log(`[proxy] character "${name}" not found — skipping`);
     return false;

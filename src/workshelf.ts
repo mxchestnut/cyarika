@@ -4,15 +4,15 @@ import type { Character } from "./types";
 const cache = new Map<string, { character: Character; expiresAt: number }>();
 const TTL_MS = 5 * 60 * 1000;
 
-export async function fetchCharacter(name: string): Promise<Character | null> {
-  const key = name.toLowerCase();
+export async function fetchCharacter(name: string, discordUserId: string): Promise<Character | null> {
+  const key = `${discordUserId}:${name.toLowerCase()}`;
   const cached = cache.get(key);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.character;
   }
 
   try {
-    const url = `${process.env.WORKSHELF_URL}/api/bot/characters?name=${encodeURIComponent(name)}`;
+    const url = `${process.env.WORKSHELF_URL}/api/bot/characters?name=${encodeURIComponent(name)}&discordUserId=${encodeURIComponent(discordUserId)}`;
     console.log(`[workshelf] fetching: ${url}`);
     const res = await fetch(url, {
       headers: { "x-bot-api-key": process.env.BOT_API_KEY ?? "" },
