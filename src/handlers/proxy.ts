@@ -7,6 +7,31 @@ const PROXY_PATTERN = /^([A-Za-z][A-Za-z\s']{0,49}):\s+(.+)/s;
 // Cached webhook clients per channel so we don't re-fetch on every message
 const webhookCache = new Map<string, WebhookClient>();
 
+async function getOrCreateWebhook(message: Message): Promise<WebhookClient | null> {
+  const cached = webhookCache.get(message.channelId);
+  if (cached) return cached;
+
+  if (!message.channel.isTextBased() || !("fetchWebhooks" in message.channel)) return null;
+
+  const existing = await message.channel.fetchWebhooks();
+  let wh = existing.find(
+    (w) => w.owner?.id === message.client.user?.id && w.name === "Cyarika Proxy"
+  );
+
+  if (!wh) {
+    wh = await message.channel.createWebhook({ name: "Cyarika Proxy" });
+  }
+
+  if (!wh.token) {
+    console.error("[proxy] webhook has no token — cannot send proxy message");
+    return null;
+  }
+
+  const client = new WebhookClient({ id: wh.id, token: wh.token });
+  webhookCache.set(message.channelId, client);
+  return client;
+}
+
 export async function handleProxy(message: Message): Promise<boolean> {
   const match = message.content.match(PROXY_PATTERN);
   if (!match) {
@@ -24,43 +49,34 @@ export async function handleProxy(message: Message): Promise<boolean> {
     return false;
   }
   console.log(`[proxy] found character: ${character.name}`);
-  if (!character) return false; // Not a known character — ignore
 
-  // Get or create a Cyarika-owned webhook in this channel
-  let webhook = webhookCache.get(message.channelId);
-  if (!webhook) {
-    if (!message.channel.isTextBased() || !("fetchWebhooks" in message.channel)) return false;
-
-    const existing = await message.channel.fetchWebhooks();
-    let wh = existing.find(
-      (w) => w.owner?.id === message.client.user?.id && w.name === "Cyarika Proxy"
-    );
-
-    if (!wh) {
-      wh = await message.channel.createWebhook({ name: "Cyarika Proxy" });
-    }
-
-    if (!wh.token) {
-      console.error("Webhook has no token — cannot send proxy message");
-      return false;
-    }
-
-    webhook = new WebhookClient({ id: wh.id, token: wh.token });
-    webhookCache.set(message.channelId, webhook);
-  }
-
-  try {
-    await message.delete();
-  } catch {
-    // Missing permissions or already deleted — proceed anyway
-  }
-
-  await webhook.send({
+  const payload = {
     content: text,
     username: character.fullName ?? character.name,
     avatarURL: character.avatarUrl ?? undefined,
-    allowedMentions: { parse: [] }, // Don't ping anyone via proxy
-  });
+    allowedMentions: { parse: [] as [] },
+  };
+
+  let webhook = await getOrCreateWebhook(message);
+  if (!webhook) return false;
+
+  try {
+    await webhook.send(payload);
+  } catch (err) {
+    // Webhook may have been deleted — invalidate cache and retry once with a fresh one
+    console.error("[proxy] webhook send failed, retrying with fresh webhook:", err);
+    webhookCache.delete(message.channelId);
+    webhook = await getOrCreateWebhook(message);
+    if (!webhook) return false;
+    await webhook.send(payload); // throws on second failure — propagates to index.ts
+  }
+
+  // Delete original only after the proxy message is confirmed sent
+  try {
+    await message.delete();
+  } catch {
+    // Missing permissions or already deleted — not critical
+  }
 
   return true;
 }
