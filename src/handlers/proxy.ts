@@ -9,12 +9,21 @@ const webhookCache = new Map<string, WebhookClient>();
 
 export async function handleProxy(message: Message): Promise<boolean> {
   const match = message.content.match(PROXY_PATTERN);
-  if (!match) return false;
+  if (!match) {
+    console.log(`[proxy] no match for: ${JSON.stringify(message.content)}`);
+    return false;
+  }
 
   const name = match[1].trim();
   const text = match[2];
+  console.log(`[proxy] matched name="${name}" text="${text.slice(0, 40)}"`);
 
   const character = await fetchCharacter(name);
+  if (!character) {
+    console.log(`[proxy] character "${name}" not found — skipping`);
+    return false;
+  }
+  console.log(`[proxy] found character: ${character.name}`);
   if (!character) return false; // Not a known character — ignore
 
   // Get or create a Cyarika-owned webhook in this channel

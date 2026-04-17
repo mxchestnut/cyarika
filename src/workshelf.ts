@@ -13,13 +13,16 @@ export async function fetchCharacter(name: string): Promise<Character | null> {
 
   try {
     const url = `${process.env.WORKSHELF_URL}/api/bot/characters?name=${encodeURIComponent(name)}`;
+    console.log(`[workshelf] fetching: ${url}`);
     const res = await fetch(url, {
       headers: { "x-bot-api-key": process.env.BOT_API_KEY ?? "" },
     });
 
+    console.log(`[workshelf] response status: ${res.status}`);
     if (res.status === 404) return null;
     if (!res.ok) {
-      console.error(`Workshelf API error ${res.status} for character "${name}"`);
+      const body = await res.text();
+      console.error(`[workshelf] API error ${res.status}: ${body}`);
       return null;
     }
 
