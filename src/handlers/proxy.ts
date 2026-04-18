@@ -1,25 +1,42 @@
-import { Message, WebhookClient } from "discord.js";
+import { Message, WebhookClient, TextChannel } from "discord.js";
 import { fetchCharacter } from "../workshelf";
 
 // Matches "CharacterName: message text" — name can include spaces and apostrophes
 const PROXY_PATTERN = /^([A-Za-z][A-Za-z\s']{0,49}):\s+(.+)/s;
 
-// Cached webhook clients per channel so we don't re-fetch on every message
+// Cached webhook clients per parent channel so we don't re-fetch on every message
 const webhookCache = new Map<string, WebhookClient>();
 
-async function getOrCreateWebhook(message: Message): Promise<WebhookClient | null> {
-  const cached = webhookCache.get(message.channelId);
-  if (cached) return cached;
+async function getOrCreateWebhook(
+  message: Message
+): Promise<{ client: WebhookClient; threadId?: string } | null> {
+  const channel = message.channel;
+  let parentChannel: TextChannel;
+  let threadId: string | undefined;
 
-  if (!message.channel.isTextBased() || !("fetchWebhooks" in message.channel)) return null;
+  // Forum posts and threads: webhook must live on the parent channel
+  if (channel.isThread()) {
+    threadId = channel.id;
+    const parent = channel.parent;
+    if (!parent || !("fetchWebhooks" in parent)) return null;
+    parentChannel = parent as TextChannel;
+  } else if ("fetchWebhooks" in channel) {
+    parentChannel = channel as TextChannel;
+  } else {
+    return null;
+  }
 
-  const existing = await message.channel.fetchWebhooks();
+  const cacheKey = parentChannel.id;
+  const cached = webhookCache.get(cacheKey);
+  if (cached) return { client: cached, threadId };
+
+  const existing = await parentChannel.fetchWebhooks();
   let wh = existing.find(
     (w) => w.owner?.id === message.client.user?.id && w.name === "Cyarika Proxy"
   );
 
   if (!wh) {
-    wh = await message.channel.createWebhook({ name: "Cyarika Proxy" });
+    wh = await parentChannel.createWebhook({ name: "Cyarika Proxy" });
   }
 
   if (!wh.token) {
@@ -28,8 +45,8 @@ async function getOrCreateWebhook(message: Message): Promise<WebhookClient | nul
   }
 
   const client = new WebhookClient({ id: wh.id, token: wh.token });
-  webhookCache.set(message.channelId, client);
-  return client;
+  webhookCache.set(cacheKey, client);
+  return { client, threadId };
 }
 
 export async function handleProxy(message: Message): Promise<boolean> {
@@ -50,25 +67,29 @@ export async function handleProxy(message: Message): Promise<boolean> {
   }
   console.log(`[proxy] found character: ${character.name}`);
 
+  let result = await getOrCreateWebhook(message);
+  if (!result) return false;
+
   const payload = {
     content: text,
     username: character.fullName ?? character.name,
     avatarURL: character.avatarUrl ?? undefined,
     allowedMentions: { parse: [] as [] },
+    threadId: result.threadId,
   };
 
-  let webhook = await getOrCreateWebhook(message);
-  if (!webhook) return false;
-
   try {
-    await webhook.send(payload);
+    await result.client.send(payload);
   } catch (err) {
     // Webhook may have been deleted — invalidate cache and retry once with a fresh one
     console.error("[proxy] webhook send failed, retrying with fresh webhook:", err);
-    webhookCache.delete(message.channelId);
-    webhook = await getOrCreateWebhook(message);
-    if (!webhook) return false;
-    await webhook.send(payload); // throws on second failure — propagates to index.ts
+    const parentId = message.channel.isThread()
+      ? message.channel.parentId!
+      : message.channelId;
+    webhookCache.delete(parentId);
+    result = await getOrCreateWebhook(message);
+    if (!result) return false;
+    await result.client.send({ ...payload, threadId: result.threadId });
   }
 
   // Delete original only after the proxy message is confirmed sent
