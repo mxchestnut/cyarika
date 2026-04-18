@@ -70,13 +70,13 @@ export async function handleProxy(message: Message): Promise<boolean> {
   let result = await getOrCreateWebhook(message);
   if (!result) return false;
 
-  const payload = {
+  const payload: Record<string, unknown> = {
     content: text,
     username: character.fullName ?? character.name,
     avatarURL: character.avatarUrl ?? undefined,
     allowedMentions: { parse: [] as [] },
-    threadId: result.threadId,
   };
+  if (result.threadId) payload.threadId = result.threadId;
 
   try {
     await result.client.send(payload);
@@ -89,7 +89,9 @@ export async function handleProxy(message: Message): Promise<boolean> {
     webhookCache.delete(parentId);
     result = await getOrCreateWebhook(message);
     if (!result) return false;
-    await result.client.send({ ...payload, threadId: result.threadId });
+    const retryPayload = { ...payload };
+    if (result.threadId) retryPayload.threadId = result.threadId;
+    await result.client.send(retryPayload);
   }
 
   // Delete original only after the proxy message is confirmed sent
