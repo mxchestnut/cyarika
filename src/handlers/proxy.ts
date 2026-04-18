@@ -1,8 +1,8 @@
 import { Message, WebhookClient, TextChannel } from "discord.js";
 import { fetchCharacter } from "../workshelf";
 
-// Matches "CharacterName: message text" — name can include spaces and apostrophes
-const PROXY_PATTERN = /^([A-Za-z][A-Za-z\s']{0,49}):\s+(.+)/s;
+// Matches "CharacterName: message text" — name can include spaces, apostrophes, and accented/Unicode letters
+const PROXY_PATTERN = /^([\p{L}][\p{L}\s']{0,49}):\s+(.+)/su;
 
 // Cached webhook clients per parent channel so we don't re-fetch on every message
 const webhookCache = new Map<string, WebhookClient>();

@@ -5,7 +5,8 @@ const cache = new Map<string, { character: Character; expiresAt: number }>();
 const TTL_MS = 5 * 60 * 1000;
 
 export async function fetchCharacter(name: string, discordUserId: string): Promise<Character | null> {
-  const key = `${discordUserId}:${name.toLowerCase()}`;
+  // Normalize to NFC and lowercase for cache key so "Ate" and "Atë" are distinct but consistent
+  const key = `${discordUserId}:${name.normalize("NFC").toLowerCase()}`;
   const cached = cache.get(key);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.character;
